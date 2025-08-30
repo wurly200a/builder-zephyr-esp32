@@ -44,13 +44,31 @@ RUN python3 -m venv ${VENV_PATH} && \
     getent hosts github.com && \
     n=0; \
     until [ $n -ge 6 ]; do \
-      west update && break; \
+      west update --narrow --fetch-opt=--depth=1 && break; \
       n=$((n+1)); echo "west update retry $n..."; sleep $((5 * n)); \
     done && \
     west zephyr-export && \
     west packages pip --install && \
     cd ${ZEPHYR_HOME}/zephyr && \
-    west sdk install && \
-    west blobs fetch hal_espressif
+    n=0; \
+    until [ $n -ge 6 ]; do \
+      west sdk install -t xtensa-espressif_esp32_zephyr-elf && break; \
+      n=$((n+1)); echo "west update retry $n..."; sleep $((5 * n)); \
+    done && \
+    n=0; \
+    until [ $n -ge 6 ]; do \
+      west sdk install -t xtensa-espressif_esp32s2_zephyr-elf && break; \
+      n=$((n+1)); echo "west update retry $n..."; sleep $((5 * n)); \
+    done && \
+    n=0; \
+    until [ $n -ge 6 ]; do \
+      west sdk install -t xtensa-espressif_esp32s3_zephyr-elf && break; \
+      n=$((n+1)); echo "west update retry $n..."; sleep $((5 * n)); \
+    done && \
+    n=0; \
+    until [ $n -ge 6 ]; do \
+      west blobs fetch hal_espressif && break; \
+      n=$((n+1)); echo "west update retry $n..."; sleep $((5 * n)); \
+    done
 
 RUN bash -lc "echo \"PS1='(docker)zephyr-esp32:\\w\\$ '\" >> ~/.bashrc"
