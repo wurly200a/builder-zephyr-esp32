@@ -30,30 +30,30 @@ jobs:
           echo github.ref_name is ${{ github.ref_name }}
           echo github.sha is ${{ github.sha }}
           echo github.event_name is ${{ github.event_name }}
-          echo github.event.pull_request.user.login is ${{ github.event.pull_request.user.login }}
-          echo github.event.action is ${{ github.event.action }}
-          echo github.event.repository_owner is ${{ github.repository_owner }}
+          echo github.repository_owner is ${{ github.repository_owner }}
           NAMESPACE=${{ github.repository || github.event.repository }}
           NAMESPACE_LC=${NAMESPACE,,}
-          echo "namespace=${NAMESPACE_LC}" >> $GITHUB_OUTPUT
+          echo "namespace=${NAMESPACE_LC}" >> "$GITHUB_OUTPUT"
           echo namespace is ${NAMESPACE_LC}
 
       - uses: actions/checkout@v4
 
       - name: Install jq
-        run: sudo apt-get install -y jq
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y jq
 
       - name: Get safe branch name and PR number
         id: tags
         run: |
           BRANCH_NAME=$(echo "${{ github.head_ref || github.ref_name }}" | sed 's,[/.],_,g')
-          if [[ -f "$GITHUB_EVENT_PATH" ]]; then
-            PR_NUMBER=$(jq --raw-output .pull_request.number "$GITHUB_EVENT_PATH")
-            echo "pr_number=${PR_NUMBER}" >> $GITHUB_OUTPUT
+          if [[ "${{ github.event_name }}" == "pull_request" ]]; then
+            PR_NUMBER=$(jq -r .pull_request.number "$GITHUB_EVENT_PATH")
+            echo "pr_number=${PR_NUMBER}" >> "$GITHUB_OUTPUT"
           else
-            echo "pr_number=" >> $GITHUB_OUTPUT
+            echo "pr_number=" >> "$GITHUB_OUTPUT"
           fi
-          echo "safe_branch_name=${BRANCH_NAME}" >> $GITHUB_OUTPUT
+          echo "safe_branch_name=${BRANCH_NAME}" >> "$GITHUB_OUTPUT"
 
       - name: Set up Docker Buildx
         uses: docker/setup-buildx-action@v3
@@ -66,14 +66,12 @@ jobs:
           registry: ghcr.io
 
       - name: Build and push
-        needs:
-          - infos
         uses: docker/build-push-action@v5
         with:
           context: .
           target: ${{ matrix.target }}
           push: true
           provenance: false
-          tags: |-
-            ghcr.io/${{ needs.infos.outputs.package-namespace }}/${{ matrix.target }}:${{ github.sha }}
-            ghcr.io/${{ needs.infos.outputs.package-namespace }}/${{ matrix.target }}:latest
+          tags: |
+            ghcr.io/${{ steps.infos.outputs.namespace }}/${{ matrix.target }}:${{ github.sha }}
+            ghcr.io/${{ steps.infos.outputs.namespace }}/${{ matrix.target }}:latest
