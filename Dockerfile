@@ -30,6 +30,8 @@ ENV ZEPHYR_HOME=/workspaces/zephyrproject \
 USER ${USER_NAME}
 WORKDIR /workspaces
 
+ENV ZEPHYR_SDK_INSTALL_DIR=/workspaces/zephyr-sdk
+
 RUN python3 -m venv ${VENV_PATH} && \
     python -m pip install --upgrade pip setuptools wheel && \
     pip install west && \
@@ -47,23 +49,25 @@ RUN python3 -m venv ${VENV_PATH} && \
     cd ${ZEPHYR_HOME}/zephyr && \
     n=0; \
     until [ $n -ge 6 ]; do \
-      west sdk install -t xtensa-espressif_esp32_zephyr-elf && break; \
+      west sdk install --install-dir "$ZEPHYR_SDK_INSTALL_DIR" -t xtensa-espressif_esp32_zephyr-elf && break; \
       n=$((n+1)); echo "west update retry $n..."; sleep $((5 * n)); \
     done && \
     n=0; \
     until [ $n -ge 6 ]; do \
-      west sdk install -t xtensa-espressif_esp32s2_zephyr-elf && break; \
+      west sdk install --install-dir "$ZEPHYR_SDK_INSTALL_DIR" -t xtensa-espressif_esp32s2_zephyr-elf && break; \
       n=$((n+1)); echo "west update retry $n..."; sleep $((5 * n)); \
     done && \
     n=0; \
     until [ $n -ge 6 ]; do \
-      west sdk install -t xtensa-espressif_esp32s3_zephyr-elf && break; \
+      west sdk install --install-dir "$ZEPHYR_SDK_INSTALL_DIR" -t xtensa-espressif_esp32s3_zephyr-elf && break; \
       n=$((n+1)); echo "west update retry $n..."; sleep $((5 * n)); \
     done && \
     n=0; \
     until [ $n -ge 6 ]; do \
       west blobs fetch hal_espressif && break; \
       n=$((n+1)); echo "west update retry $n..."; sleep $((5 * n)); \
-    done
+    done && \
+    echo "===== ZEPHYR SDK installed under: ${ZEPHYR_SDK_INSTALL_DIR} =====" && \
+    (ls -al "${ZEPHYR_SDK_INSTALL_DIR}" || true)
 
 RUN bash -lc "echo \"PS1='(docker)zephyr-esp32:\\w\\$ '\" >> ~/.bashrc"
