@@ -23,12 +23,12 @@ RUN apt-get update && \
 
 FROM base AS zephyr-esp32
 
-ENV ZEPHYR_HOME=/home/${USER_NAME}/zephyrproject \
-    VENV_PATH=/home/${USER_NAME}/zephyrproject/.venv \
-    PATH=/home/${USER_NAME}/zephyrproject/.venv/bin:$PATH
+ENV ZEPHYR_HOME=/workspaces/zephyrproject \
+    VENV_PATH=/workspaces/zephyrproject/.venv \
+    PATH=/workspaces/zephyrproject/.venv/bin:$PATH
 
 USER ${USER_NAME}
-WORKDIR /home/${USER_NAME}
+WORKDIR /workspaces
 
 RUN python3 -m venv ${VENV_PATH} && \
     python -m pip install --upgrade pip setuptools wheel && \
