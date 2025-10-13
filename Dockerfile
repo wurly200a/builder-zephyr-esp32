@@ -70,4 +70,100 @@ RUN python3 -m venv ${VENV_PATH} && \
     echo "===== ZEPHYR SDK installed under: ${ZEPHYR_SDK_INSTALL_DIR} =====" && \
     (ls -al "${ZEPHYR_SDK_INSTALL_DIR}" || true)
 
+# ===== install esp-clang and use it for clangd (start) =====
+USER root
+# Install basic deps for fetching esp-idf tools (esp-clang)
+RUN apt-get update && apt-get install -y --no-install-recommends python3-venv python3-pip git && rm -rf /var/lib/apt/lists/*
+
+# Get ESP-IDF just to use idf_tools.py and export.sh (no IDF build intended)
+ARG ESP_IDF_VERSION=v5.3.1
+RUN cd /opt && git clone -b ${ESP_IDF_VERSION} --recursive https://github.com/espressif/esp-idf.git
+
+# Install esp-clang toolchain only (kept under /home/${USER_NAME}/.espressif/tools)
+USER ${USER_NAME}
+RUN cd /opt/esp-idf && python3 ./tools/idf_tools.py install esp-clang && \
+    echo "export IDF_PATH=/opt/esp-idf" >> /home/${USER_NAME}/.bashrc && \
+    echo "source /opt/esp-idf/export.sh >/dev/null 2>&1" >> /home/${USER_NAME}/.bashrc
+
+USER root
+# Provide the Zephyr wrapper that sources ESP-IDF (to put esp-clang's clangd first in PATH)
+RUN set -e; \
+  cat >/usr/local/bin/clangd-with-zephyr <<'EOF' && chmod +x /usr/local/bin/clangd-with-zephyr
+#!/usr/bin/env bash
+set -euo pipefail
+
+# Put esp-clang's clang/clangd into PATH
+if [ -f /opt/esp-idf/export.sh ]; then
+  # Suppress noisy output, but ensure PATH is set
+  # shellcheck disable=SC1091
+  source /opt/esp-idf/export.sh >/dev/null 2>&1 || true
+fi
+
+# Log file (override with CLANGD_LOG=...)
+LOG="${CLANGD_LOG:-/tmp/clangd.log}"
+: > "$LOG" || { echo "cannot write $LOG" >&2; exit 1; }
+
+# 1) Auto-detect compile_commands.json unless given via --compile-commands-dir
+find_cc_dir() {
+  local d="$PWD"
+  while [ "$d" != "/" ]; do
+    [ -f "$d/compile_commands.json" ] && { echo "$d"; return 0; }
+    [ -f "$d/build/compile_commands.json" ] && { echo "$d/build"; return 0; }
+    d="$(dirname "$d")"
+  done
+  return 1
+}
+CC_DIR="${ZEPHYR_CC_DIR:-}"
+# Allow explicit --compile-commands-dir passed by user
+for i in "$@"; do
+  case "$i" in
+    --compile-commands-dir=*) CC_DIR="${i#*=}";;
+  esac
+done
+if [ -z "${CC_DIR}" ]; then
+  if ! CC_DIR="$(find_cc_dir)"; then
+    echo "[ERROR] compile_commands.json not found." | tee -a "$LOG"
+    echo "       e.g., west build -b esp32s3_devkitm/esp32s3 -- -DCMAKE_EXPORT_COMPILE_COMMANDS=ON" | tee -a "$LOG"
+    exit 2
+  fi
+fi
+
+# 2) Collect Zephyr SDK cross GCCs for --query-driver (we still use GCC for system headers/defines)
+SDK_BASE="${ZEPHYR_SDK_INSTALL_DIR:-/workspaces/zephyr-sdk}"
+SDK_GLOBS=(
+  "${SDK_BASE}/xtensa-*/bin/*-gcc"
+  "${SDK_BASE}/arm-zephyr-eabi/bin/arm-zephyr-eabi-gcc"
+  "${SDK_BASE}/riscv64-zephyr-elf/bin/riscv64-zephyr-elf-gcc"
+)
+QD_LIST=()
+for g in "${SDK_GLOBS[@]}"; do
+  for p in $g; do [ -x "$p" ] && QD_LIST+=("$p"); done
+done
+QD_ARG=()
+if [ ${#QD_LIST[@]} -gt 0 ]; then
+  QD_ARG=(--query-driver="$(IFS=,; echo "${QD_LIST[*]}")")
+else
+  echo "[WARN] Zephyr SDK cross compilers not found; continuing without --query-driver." | tee -a "$LOG"
+fi
+
+# Prefer esp-clang's clangd if present
+CLANGD_BIN="$(command -v clangd || true)"
+if [ -z "$CLANGD_BIN" ]; then
+  echo "[ERROR] clangd not found in PATH (esp-clang not installed?)." | tee -a "$LOG"
+  exit 3
+fi
+
+exec "$CLANGD_BIN" \
+  --background-index \
+  --all-scopes-completion \
+  --clang-tidy \
+  --header-insertion=never \
+  --compile-commands-dir="${CC_DIR}" \
+  -target xtensa \
+  "${QD_ARG[@]}" \
+  "$@" --log=verbose 2>>"$LOG"
+EOF
+USER ${USER_NAME}
+# ===== install esp-clang and use it for clangd (end) =====
+
 RUN bash -lc "echo \"PS1='(docker)zephyr-esp32:\\w\\$ '\" >> ~/.bashrc"
