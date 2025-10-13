@@ -3,8 +3,8 @@ FROM ubuntu:24.04 AS base
 ARG DEBIAN_FRONTEND=noninteractive
 ENV TZ=Asia/Tokyo
 
-ARG USER_NAME=builder
-ARG GROUP_NAME=builder
+ARG USER_NAME="ubuntu"
+ARG GROUP_NAME="ubuntu"
 
 USER root
 
@@ -21,19 +21,14 @@ RUN apt-get update && \
       libsdl2-dev libmagic1 curl && \
     rm -rf /var/lib/apt/lists/*
 
-RUN groupadd -r ${GROUP_NAME} && \
-    useradd -r -g ${GROUP_NAME} -m -s /bin/bash ${USER_NAME}
-
 FROM base AS zephyr-esp32
 
-ARG USER_NAME="builder"
-
-ENV ZEPHYR_HOME=/home/${USER_NAME}/zephyrproject \
-    VENV_PATH=/home/${USER_NAME}/zephyrproject/.venv \
-    PATH=/home/${USER_NAME}/zephyrproject/.venv/bin:$PATH
+ENV ZEPHYR_HOME=/workspaces/zephyrproject \
+    VENV_PATH=/workspaces/zephyrproject/.venv \
+    PATH=/workspaces/zephyrproject/.venv/bin:$PATH
 
 USER ${USER_NAME}
-WORKDIR /home/${USER_NAME}
+WORKDIR /workspaces
 
 RUN python3 -m venv ${VENV_PATH} && \
     python -m pip install --upgrade pip setuptools wheel && \
