@@ -92,16 +92,29 @@ RUN set -e; \
 #!/usr/bin/env bash
 set -euo pipefail
 
-# Put esp-clang's clang/clangd into PATH
+# Put esp-clang's clang/clangd into PATH (best effort)
 if [ -f /opt/esp-idf/export.sh ]; then
-  # Suppress noisy output, but ensure PATH is set
   # shellcheck disable=SC1091
   source /opt/esp-idf/export.sh >/dev/null 2>&1 || true
+fi
+
+# Fallback: if clangd is still not visible, prepend esp-clang bin under $HOME
+if ! command -v clangd >/dev/null 2>&1; then
+  for d in "$HOME"/.espressif/tools/esp-clang/*/esp-clang/bin; do
+    if [ -x "$d/clangd" ]; then
+      export PATH="$d:$PATH"
+      break
+    fi
+  done
 fi
 
 # Log file (override with CLANGD_LOG=...)
 LOG="${CLANGD_LOG:-/tmp/clangd.log}"
 : > "$LOG" || { echo "cannot write $LOG" >&2; exit 1; }
+{
+  echo "[INFO] which clangd: $(command -v clangd || echo 'NONE')"
+  echo "[INFO] PATH=$PATH"
+} >>"$LOG"
 
 # 1) Auto-detect compile_commands.json unless given via --compile-commands-dir
 find_cc_dir() {
@@ -146,7 +159,7 @@ else
   echo "[WARN] Zephyr SDK cross compilers not found; continuing without --query-driver." | tee -a "$LOG"
 fi
 
-# Prefer esp-clang's clangd if present
+# Prefer esp-clang's clangd; error if still missing
 CLANGD_BIN="$(command -v clangd || true)"
 if [ -z "$CLANGD_BIN" ]; then
   echo "[ERROR] clangd not found in PATH (esp-clang not installed?)." | tee -a "$LOG"
@@ -159,7 +172,6 @@ exec "$CLANGD_BIN" \
   --clang-tidy \
   --header-insertion=never \
   --compile-commands-dir="${CC_DIR}" \
-  -target xtensa \
   "${QD_ARG[@]}" \
   "$@" --log=verbose 2>>"$LOG"
 EOF
